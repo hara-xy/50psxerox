@@ -40,7 +40,14 @@ async function sendTelegramMessage(message) {
       }
       
       const data = await response.json();
-      console.log(`✅ Success with proxy ${i + 1}`);
+      console.log(`✅ Success with proxy ${i + 1}:`, data);
+      
+      // Check if there was an error in the response
+      if (!data.ok) {
+        console.error('Telegram API error:', data.description);
+        throw new Error(data.description || 'Telegram API returned an error');
+      }
+      
       currentProxyIndex = i; // Remember working proxy
       return data;
       
@@ -90,7 +97,14 @@ async function sendTelegramDocument(document, caption = "") {
       }
       
       const data = await response.json();
-      console.log(`✅ Document sent successfully`);
+      console.log(`✅ Document sent successfully:`, data);
+      
+      // Check if there was an error in the response
+      if (!data.ok) {
+        console.error('Telegram API error:', data.description);
+        throw new Error(data.description || 'Telegram API returned an error');
+      }
+      
       return data;
       
     } catch (error) {
