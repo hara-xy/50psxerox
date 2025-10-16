@@ -97,12 +97,19 @@ async function sendTelegramDocument(document, caption = "") {
       }
       
       const data = await response.json();
-      console.log(`✅ Document sent successfully:`, data);
+      console.log(`📥 Document API Response:`, JSON.stringify(data, null, 2));
       
       // Check if there was an error in the response
-      if (!data.ok) {
-        console.error('Telegram API error:', data.description);
+      if (data && !data.ok) {
+        console.error('❌ Telegram API error:', data.description);
+        console.error('Error code:', data.error_code);
         throw new Error(data.description || 'Telegram API returned an error');
+      }
+      
+      if (!data || !data.result) {
+        console.warn('⚠️ Unexpected response format:', data);
+      } else {
+        console.log(`✅ Document sent successfully - Message ID: ${data.result.message_id}`);
       }
       
       return data;
@@ -174,6 +181,20 @@ async function sendPrintOrderToTelegram(orderData) {
     // Step 3: Send actual document
     if (file) {
       console.log("📤 Step 3: Sending document file...");
+      console.log("📋 File details:", {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        sizeInMB: (file.size / (1024 * 1024)).toFixed(2) + ' MB'
+      });
+      
+      // Telegram has a 50MB limit for bots
+      if (file.size > 50 * 1024 * 1024) {
+        console.error("❌ File too large! Telegram bot limit is 50MB");
+        alert("File is too large. Telegram bots can only send files up to 50MB.");
+        return false;
+      }
+      
       await sendTelegramDocument(file, `Document from ${name} (${email})`);
       console.log("✅ Document sent successfully");
     } else {
