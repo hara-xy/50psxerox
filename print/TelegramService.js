@@ -1,5 +1,6 @@
 // TelegramService.js - Multiple CORS proxy fallbacks
 const TELEGRAM_BOT_TOKEN = "7918152804:AAEfqKOSPdTW26F1OpWBhn3onVP3pk-6Jgs";
+// Ensure chat ID is properly formatted (remove any extra characters)
 const TELEGRAM_CHAT_ID = "-4795407436";
 
 // Multiple CORS proxies to try (in order of reliability)
@@ -64,153 +65,114 @@ async function sendTelegramMessage(message) {
 
 async function sendTelegramDocument(document, caption = "") {
   const baseUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument`;
+  const proxyUrl = 'http://localhost:3000/sendDocument'; // Local proxy server
   
-  // Try direct upload first (most reliable for file uploads)
-  try {
-    console.log("Trying direct document upload (bypassing CORS proxies for better compatibility)");
-    
-    const formData = new FormData();
-    formData.append('chat_id', TELEGRAM_CHAT_ID);
-    formData.append('document', document, document.name);
-    
-    if (caption) {
-      formData.append('caption', caption);
-    }
-    
-    const response = await fetch(baseUrl, {
-      method: 'POST',
-      body: formData
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Direct upload failed with status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log(`📥 Document API Response:`, JSON.stringify(data, null, 2));
-    
-    // Check if there was an error in the response
-    if (data && !data.ok) {
-      console.error('❌ Telegram API error:', data.description);
-      console.error('Error code:', data.error_code);
-      throw new Error(data.description || 'Telegram API returned an error');
-    }
-    
-    if (!data || !data.result) {
-      console.warn('⚠️ Unexpected response format:', data);
-    } else {
-      console.log(`✅ Document sent successfully - Message ID: ${data.result.message_id}`);
-    }
-    
-    return data;
-    
-  } catch (error) {
-    console.warn("Direct document upload failed:", error.message);
-    
-    // If direct upload fails, try with CORS proxies as fallback
-    console.log("Trying CORS proxy fallbacks...");
-    
-    const proxyOrder = [
-      ...CORS_PROXIES.slice(currentProxyIndex),
-      ...CORS_PROXIES.slice(0, currentProxyIndex)
-    ];
-    
-    for (let i = 0; i < proxyOrder.length; i++) {
-      const proxy = proxyOrder[i];
-      
-      // Skip empty proxy (direct) since we already tried that
-      if (!proxy) continue;
-      
-      const url = proxy + encodeURIComponent(baseUrl);
-      
-      try {
-        console.log(`Trying document upload via CORS proxy ${i + 1}/${proxyOrder.length}: ${proxy}`);
+  console.log("Attempting to send document to Telegram:", {
+    name: document.name,
+    type: document.type,
+    size: document.size
+  });
+  
+  // Validate document
+  if (!document || !(document instanceof Blob)) {
+    throw new Error("Invalid document provided. Must be a File or Blob object.");
+  }
+  
+  // Ensure document has a name
+  const fileName = document.name || `document_${Date.now()}.bin`;
+  console.log("Using file name:", fileName);
+  
+  // Try multiple approaches
+  const approaches = [
+    {
+      name: "Direct Upload (may be blocked by CORS)",
+      fn: async () => {
+        const formData = new FormData();
+        formData.append('chat_id', TELEGRAM_CHAT_ID);
+        formData.append('document', document, fileName);
         
-        // For CORS proxies with file uploads, we need special handling
-        // Convert file to base64 and send as JSON (Telegram accepts this format)
-        const base64Data = await fileToBase64(document);
+        if (caption) {
+          formData.append('caption', caption);
+        }
         
-        const response = await fetch(url, {
+        console.log("Trying direct upload to Telegram API...");
+        const response = await fetch(baseUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            document: `attach://${document.name}`, // Special identifier for file uploads
-            caption: caption
-          })
+          body: formData
         });
         
         if (!response.ok) {
-          console.warn(`CORS proxy ${i + 1} failed with status: ${response.status}`);
-          continue;
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
         
-        const data = await response.json();
-        console.log(`📥 Document API Response (proxy):`, JSON.stringify(data, null, 2));
-        
-        if (data && !data.ok) {
-          console.error('❌ Telegram API error (proxy):', data.description);
-          continue;
+        return await response.json();
+      }
+    },
+    {
+      name: "Local Proxy Server",
+      fn: async () => {
+        // Check if local proxy is available
+        try {
+          const healthCheck = await fetch('http://localhost:3000/health');
+          if (!healthCheck.ok) {
+            throw new Error('Proxy server not responding');
+          }
+        } catch (error) {
+          console.log("Local proxy server not available, skipping this approach");
+          throw new Error('Local proxy server not available');
         }
         
-        if (!data || !data.result) {
-          console.warn('⚠️ Unexpected response format (proxy):', data);
-        } else {
-          console.log(`✅ Document sent successfully via proxy - Message ID: ${data.result.message_id}`);
+        const formData = new FormData();
+        formData.append('document', document, fileName);
+        formData.append('chat_id', TELEGRAM_CHAT_ID);
+        
+        if (caption) {
+          formData.append('caption', caption);
         }
         
+        console.log("Trying local proxy server...");
+        const response = await fetch(proxyUrl, {
+          method: 'POST',
+          body: formData
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Proxy error: HTTP ${response.status}: ${errorText}`);
+        }
+        
+        return await response.json();
+      }
+    }
+  ];
+  
+  // Try each approach
+  for (let i = 0; i < approaches.length; i++) {
+    const approach = approaches[i];
+    try {
+      console.log(`Trying approach ${i + 1}/${approaches.length}: ${approach.name}`);
+      const data = await approach.fn();
+      
+      console.log("Telegram API response:", data);
+      
+      if (data && data.ok) {
+        console.log(`✅ Document sent successfully! Message ID: ${data.result.message_id}`);
         return data;
-        
-      } catch (proxyError) {
-        console.warn(`CORS proxy ${i + 1} error:`, proxyError.message);
+      } else {
+        console.warn(`Approach failed:`, data.description || 'Unknown error');
         continue;
       }
-    }
-    
-    // If all proxies fail, try one more direct approach without FormData
-    console.log("Trying alternative direct approach...");
-    try {
-      const base64Data = await fileToBase64(document);
-      
-      const response = await fetch(baseUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          document: `data:${document.type};base64,${base64Data}`,
-          caption: caption
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`✅ Document sent successfully via alternative method`);
-        return data;
+    } catch (error) {
+      console.warn(`Approach ${i + 1} failed:`, error.message);
+      if (i === approaches.length - 1) {
+        // All approaches failed
+        throw new Error(`All approaches failed. Last error: ${error.message}`);
       }
-    } catch (altError) {
-      console.warn("Alternative direct approach also failed:", altError.message);
     }
-    
-    throw new Error('Failed to send document via all methods. This is likely due to CORS restrictions. Try deploying to a web server or using a browser without CORS restrictions.');
   }
-}
-
-// Helper function to convert file to base64
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => {
-      // Remove the data URL prefix (e.g., "data:image/png;base64,")
-      const base64Data = reader.result.split(',')[1];
-      resolve(base64Data);
-    };
-    reader.onerror = error => reject(error);
-  });
+  
+  throw new Error('Failed to send document - all approaches exhausted');
 }
 
 async function sendPrintOrderToTelegram(orderData) {
@@ -219,6 +181,8 @@ async function sendPrintOrderToTelegram(orderData) {
   });
   
   const { name, email, document, printOptions, file } = orderData;
+  
+  console.log("sendPrintOrderToTelegram called with:", { name, email, document, printOptions, file });
   
   const message = [
     `🖨️ *50psxerox Print Order*`,
@@ -263,6 +227,7 @@ async function sendPrintOrderToTelegram(orderData) {
       { type: 'application/json' }
     );
     
+    console.log("Sending order summary file:", summaryFile);
     await sendTelegramDocument(summaryFile, `Order summary from ${name}`);
     console.log("✅ Order summary sent successfully");
     
@@ -283,6 +248,7 @@ async function sendPrintOrderToTelegram(orderData) {
         return false;
       }
       
+      console.log("Sending actual document file:", file);
       await sendTelegramDocument(file, `Document from ${name} (${email})`);
       console.log("✅ Document sent successfully");
     } else {
@@ -294,6 +260,7 @@ async function sendPrintOrderToTelegram(orderData) {
     
   } catch (error) {
     console.error("❌ Error in sendPrintOrderToTelegram:", error);
+    console.error("Error stack:", error.stack);
     
     // Show helpful error message
     if (error.message.includes('CORS') || error.message.includes('fetch')) {
@@ -320,6 +287,7 @@ async function sendPrintOrderToTelegram(orderData) {
 export async function sendWorkflowToTelegram(name, email, nodes, edges, groups) {
   console.log("🚀 Starting workflow submission...");
   console.log("Customer:", name, email);
+  console.log("Nodes:", nodes);
   
   const documentNode = nodes.find(n => n.type === 'document');
   const printOptionsNode = nodes.find(n => n.type === 'print-options');
@@ -335,6 +303,24 @@ export async function sendWorkflowToTelegram(name, email, nodes, edges, groups) 
     alert("Print options are missing!");
     return false;
   }
+  
+  console.log("Document node:", documentNode);
+  console.log("Document file:", documentNode.file);
+  
+  // Check if file exists and is valid
+  if (!documentNode.file) {
+    console.error("❌ No file attached to document node");
+    alert("No file was attached to the document!");
+    return false;
+  }
+  
+  console.log("File details:", {
+    name: documentNode.file.name,
+    size: documentNode.file.size,
+    type: documentNode.file.type,
+    isFile: documentNode.file instanceof File,
+    isBlob: documentNode.file instanceof Blob
+  });
   
   const orderData = {
     name: name,
@@ -364,3 +350,6 @@ export async function sendWorkflowToTelegram(name, email, nodes, edges, groups) 
   
   return result;
 }
+
+// Export the sendTelegramDocument function for testing
+export { sendTelegramDocument };

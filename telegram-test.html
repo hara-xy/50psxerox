@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram API Test</title>
+</head>
+<body>
+    <h1>Telegram API Test</h1>
+    <button id="testMessage">Test Message</button>
+    <button id="testDocument">Test Document</button>
+    <div id="result"></div>
+
+    <script type="module">
+        import { sendTelegramDocument } from './TelegramService.js';
+        
+        // Test the Telegram service functions directly
+        const TELEGRAM_BOT_TOKEN = "7918152804:AAEfqKOSPdTW26F1OpWBhn3onVP3pk-6Jgs";
+        const TELEGRAM_CHAT_ID = "-4795407436";
+        const baseUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+        document.getElementById('testMessage').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Sending test message...</p>';
+            
+            try {
+                const response = await fetch(baseUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CHAT_ID,
+                        text: "Test message from 50psxerox debug tool",
+                        parse_mode: 'Markdown'
+                    })
+                });
+                
+                const data = await response.json();
+                console.log("Test message response:", data);
+                
+                if (data.ok) {
+                    resultDiv.innerHTML = '<p style="color: green;">Test message sent successfully!</p>';
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">Failed to send test message: ${data.description}</p>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+
+        document.getElementById('testDocument').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>Creating test document...</p>';
+            
+            try {
+                // Create a simple text file
+                const content = "This is a test document from 50psxerox debug tool";
+                const blob = new Blob([content], { type: 'text/plain' });
+                const file = new File([blob], "test.txt", { type: 'text/plain' });
+                
+                resultDiv.innerHTML = '<p>Sending test document...</p>';
+                
+                const result = await sendTelegramDocument(file, "Test document from debug tool");
+                console.log("Test document result:", result);
+                
+                if (result && result.ok) {
+                    resultDiv.innerHTML = '<p style="color: green;">Test document sent successfully!</p>';
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">Failed to send test document</p>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

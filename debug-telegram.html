@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telegram Document Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+        button { padding: 10px 15px; margin: 5px; background: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background: #45a049; }
+        #result { margin: 15px 0; padding: 10px; background: #f0f0f0; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e9; color: #2e7d32; }
+    </style>
+</head>
+<body>
+    <h1>Telegram Document Sending Debug Tool</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Basic Connectivity</h2>
+        <button id="testBot">Test Bot Token</button>
+        <div id="botResult"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: File Upload</h2>
+        <input type="file" id="fileInput" />
+        <button id="testFile">Send Test File</button>
+        <div id="fileResult"></div>
+    </div>
+
+    <script type="module">
+        import { sendTelegramDocument } from './TelegramService.js';
+        
+        const TELEGRAM_BOT_TOKEN = "7918152804:AAEfqKOSPdTW26F1OpWBhn3onVP3pk-6Jgs";
+        const TELEGRAM_CHAT_ID = "-4795407436";
+        
+        // Test 1: Basic bot connectivity
+        document.getElementById('testBot').addEventListener('click', async () => {
+            const resultDiv = document.getElementById('botResult');
+            resultDiv.innerHTML = '<p>Testing bot connectivity...</p>';
+            resultDiv.className = '';
+            
+            try {
+                const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe`);
+                const data = await response.json();
+                
+                if (data.ok) {
+                    resultDiv.innerHTML = `<p class="success">✅ Bot is working! Username: ${data.result.username}</p>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ Bot error: ${data.description}</p>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<p class="error">❌ Connection error: ${error.message}</p>`;
+                resultDiv.className = 'error';
+            }
+        });
+        
+        // Test 2: File upload
+        document.getElementById('testFile').addEventListener('click', async () => {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('fileResult');
+            
+            if (!fileInput.files.length) {
+                resultDiv.innerHTML = '<p class="error">Please select a file first!</p>';
+                resultDiv.className = 'error';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            resultDiv.innerHTML = `<p>Sending file: ${file.name} (${(file.size/1024).toFixed(2)} KB)</p>`;
+            resultDiv.className = '';
+            
+            try {
+                console.log("Calling sendTelegramDocument with file:", file);
+                const result = await sendTelegramDocument(file, "Test file from debug tool");
+                
+                if (result && result.ok) {
+                    resultDiv.innerHTML = `<p class="success">✅ File sent successfully! Message ID: ${result.result.message_id}</p>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="error">❌ Failed to send file</p>`;
+                }
+            } catch (error) {
+                console.error("Error sending file:", error);
+                resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+                resultDiv.className = 'error';
+            }
+        });
+    </script>
+</body>
+</html>
